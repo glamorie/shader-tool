@@ -613,4 +613,77 @@ TimerUpdate(timer* Timer)
   return dt;
 };
 
+typedef struct fullscreen fullscreen;
+struct fullscreen
+{
+  RECT Rect;
+  LONG WindowStyle;
+  LONG WindowStyleEx;
+  LONG On;
+  int Zoomed;
+};
+void
+FullScreenEnter(fullscreen* FullScreen, HWND Hwnd)
+{
+  if (!FullScreen || FullScreen->On) return;
+  
+  FullScreen->On = 1;
+  FullScreen->Zoomed = IsZoomed(Hwnd);
+  FullScreen->WindowStyle = GetWindowLongW(Hwnd, GWL_STYLE);
+  FullScreen->WindowStyleEx = GetWindowLongW(Hwnd, GWL_EXSTYLE);
+  GetWindowRect(Hwnd, &FullScreen->Rect);
+  
+  SetWindowLongW(Hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+  SetWindowLongW(Hwnd, GWL_EXSTYLE, FullScreen->WindowStyleEx); // keep it
+  
+  HMONITOR Monitor = MonitorFromWindow(Hwnd, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO MonitorInfo = {0};
+  MonitorInfo.cbSize = sizeof(MonitorInfo);
+  GetMonitorInfoW(Monitor, &MonitorInfo);
+  
+  SetWindowPos(
+    Hwnd, NULL,
+    MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
+    MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
+    MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
+    SWP_FRAMECHANGED | SWP_NOZORDER
+  );
+};
+
+void
+FullScreenLeave(fullscreen* FullScreen, HWND Hwnd)
+{
+  if (!FullScreen || !FullScreen->On) return;
+  
+  FullScreen->On = 0;
+  
+  // Restore styles FIRST
+  SetWindowLongW(Hwnd, GWL_STYLE, FullScreen->WindowStyle);
+  SetWindowLongW(Hwnd, GWL_EXSTYLE, FullScreen->WindowStyleEx);
+  
+  SetWindowPos(
+    Hwnd, NULL,
+    FullScreen->Rect.left, FullScreen->Rect.top,
+    FullScreen->Rect.right - FullScreen->Rect.left, 
+    FullScreen->Rect.bottom - FullScreen->Rect.top,
+    SWP_FRAMECHANGED | SWP_NOZORDER
+  );
+  
+  if (FullScreen->Zoomed)
+  ShowWindow(Hwnd, SW_MAXIMIZE);
+  else
+  ShowWindow(Hwnd, SW_NORMAL);
+};
+
+void
+FullScreenToggle(fullscreen* FullScreen, HWND Hwnd)
+{
+  if (FullScreen->On)
+  {
+    FullScreenLeave(FullScreen, Hwnd);
+  } else
+  {
+    FullScreenEnter(FullScreen, Hwnd);
+  };
+};
 #include "builtin/builtin.c"
