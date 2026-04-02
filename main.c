@@ -686,4 +686,114 @@ FullScreenToggle(fullscreen* FullScreen, HWND Hwnd)
     FullScreenEnter(FullScreen, Hwnd);
   };
 };
+
+#if ShaderToolThread
+typedef struct paint_thread paint_thread;
+struct paint_thread
+{
+  CRITICAL_SECTION CriticalSection;
+  paint* Paint;
+  shader_constants Constants;
+  HANDLE Thread;
+  volatile int Width, Height;
+  volatile u8 ShouldResize;
+  volatile u8 ShouldClose;
+};
+
+DWORD CALLBACK
+PaintThreadProc(void* Ptr)
+{
+  paint_thread* PThread = Ptr;
+  timer Timer = {0};
+  TimerInit(&Timer);
+  float Start = TimerGet(&Timer);
+  int Width = 0, Height = 0;
+  const double FPS = 60.0;
+  
+  while (1)
+  {
+    EnterCriticalSection(&PThread->CriticalSection);
+    u8 ShouldClose = PThread->ShouldClose;
+    u8 ShouldResize = PThread->ShouldResize;
+    Width = PThread->Width;
+    Height = PThread->Height;
+    shader_constants Constants = PThread->Constants;
+    PThread->ShouldClose = 0;
+    PThread->ShouldResize = 0;
+    LeaveCriticalSection(&PThread->CriticalSection);
+    
+    if (ShouldClose) break;
+    
+    if (ShouldResize)
+    {
+      PaintResize(PThread->Paint, Width, Height);
+    };
+    Constants.iResolution.x = Width;
+    Constants.iResolution.y = Height;
+    
+    double dt = TimerUpdate(&Timer);
+    Constants.iTime.x = TimerGet(&Timer) - Start;
+    Constants.iTime.y = dt;
+    
+    PaintRender(PThread->Paint, F4(0.2, 0.2, 0.2, 1.0), &Constants);
+    
+    if (!ShouldResize && dt < 1.0 / FPS)
+    {
+      Sleep((DWORD)((1.0 / FPS - dt )* 1000));
+    };
+  };
+  return 0;
+};
+
+paint_thread*
+PaintThreadOpen(paint* Paint, arena* Arena)
+{
+  paint_thread* Thread = ArenaZPush(Arena, sizeof(*Thread), alignof(paint_thread));
+  
+  if (Thread)
+  {
+    InitializeCriticalSection(&Thread->CriticalSection);
+    Thread->Paint = Paint;
+    Thread->Thread = CreateThread(0, 0, PaintThreadProc, Thread, 0, 0);
+  };
+  
+  return Thread;
+};
+
+void
+PaintThreadClose(paint_thread* Thread)
+{
+  if (!Thread) return;
+  EnterCriticalSection(&Thread->CriticalSection);
+  Thread->ShouldClose = 1;
+  LeaveCriticalSection(&Thread->CriticalSection);
+  WaitForSingleObject(Thread->Thread, INFINITE);
+  
+  CloseHandle(Thread->Thread);
+  DeleteCriticalSection(&Thread->CriticalSection);
+  MemoryZero(Thread, sizeof(*Thread));
+};
+
+void
+PaintThreadResize(paint_thread* Thread, int Width, int Height)
+{
+  if (!Thread) return;
+  EnterCriticalSection(&Thread->CriticalSection);
+  Thread->ShouldResize = 1;
+  Thread->Width = Width;
+  Thread->Height = Height;
+  LeaveCriticalSection(&Thread->CriticalSection);
+};
+
+void
+PaintThreadUpdateConstants(paint_thread* Thread, shader_constants* Constants)
+{
+  if (!Thread) return;
+  EnterCriticalSection(&Thread->CriticalSection);
+  Thread->Constants = *Constants;
+  LeaveCriticalSection(&Thread->CriticalSection);
+};
+
+#endif // FeatureRenderThread
+
 #include "builtin/builtin.c"
