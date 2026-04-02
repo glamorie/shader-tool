@@ -76,6 +76,6 @@ pushd "%~dp0"
 if not exist "build\" mkdir build\
 pushd build\
 echo Building ...
-cl.exe /I.. %__Flags% ..\main.c
+cl.exe /I.. %__Flags% ..\main.c /Fe:ShaderTool.exe
 popd
 popd
