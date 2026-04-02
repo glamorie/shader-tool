@@ -121,7 +121,7 @@ ShaderTypes \
 
 #define PixelShaderSource() \
 PixelShaderPrefix() \
-"float4 "Str(ShaderToolPsMain)"(float2 pos) \n" \
+"float4 "Str(ShaderToolEntry)"(float2 pos) \n" \
 "{ \n" \
 "  float2 uv = pos / iResolution.xy; \n" \
 "  return float4(uv.x, 0.0, uv.y, 1.0); \n" \
@@ -358,6 +358,7 @@ PaintMake(HWND Hwnd, arena* Arena)
       ComRelease(PsUser);
       ComRelease(PsBuffer);
       ArenaPop(Arena, sizeof(paint));
+      FatalF("Could not initialize direct x\n");
     } else 
     {
       Paint->Hwnd = Hwnd;
@@ -1058,16 +1059,20 @@ int wWinMain(HINSTANCE a, HINSTANCE b, LPWSTR c, int d)
 
   TempScope(App->Arena)
   {
-    string Shader = PathReadAll(S("Shader.hlsl"), NULL, App->Arena);
+    string Path = S("Shader.hlsl"); // TODO: Maybe get it from the command line
 
-    string Error = {0};
-    App->Paint->PsUser = PaintCompileUserShader(
-      App->Paint, S("Shader.hlsl"), Shader, &Error,
-      App->Arena
-    );    
-    if (Error.Length)
+    if (PathExists(Path))
     {
-      FatalF("Error: \n%s\n", Error.Value);
+      string Shader = PathReadAll(Path, NULL, App->Arena);  
+      string Error = {0};
+      App->Paint->PsUser = PaintCompileUserShader(
+        App->Paint, Path, Shader, &Error,
+        App->Arena
+      );    
+      if (Error.Length)
+      {
+        FatalF("Error: \n%s\n", Error.Value);
+      };
     };
   };
 
