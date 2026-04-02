@@ -1051,8 +1051,43 @@ AppEnableDpiAwareness(void)
   };
 };
 
+u32
+StringIsValidFunctionName(string String)
+{
+  for (usize i = 0; i < String.Length; i++)
+  {
+    u32 Char = String.Value[i];
+    u32 Ok = (
+      CharIsAlnum(Char) ||
+      Char == '_'
+    );
+
+    if (!Ok) return 0;
+  };
+
+  return !!String.Length;
+};
+
 int wWinMain(HINSTANCE a, HINSTANCE b, LPWSTR c, int d)
 {
+  if (!StringIsValidFunctionName(ShaderToolEntryName()))
+  {
+    FatalF("<%s> is not a valid virtual entry point.", ShaderToolEntryName().Value);
+    return 1;
+  };
+
+  if (!StringIsValidFunctionName(ShaderToolPsMainName()))
+  {
+    FatalF("<%s> is not a valid entry point.", ShaderToolPsMainName().Value);
+    return 1;
+  };
+
+  if (StringEqual(ShaderToolEntryName(), ShaderToolPsMainName()))
+  {
+    FatalF("Virtual entry point cannot be equal to the actual entry point.");
+    return 1;
+  };
+
   AppEnableDpiAwareness();
 
   app* App = AppWindowMake("Shader Tool", 1200, 600);
