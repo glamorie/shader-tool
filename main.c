@@ -688,7 +688,7 @@ FullScreenToggle(fullscreen* FullScreen, HWND Hwnd)
   };
 };
 
-#if ShaderToolThread
+#if ShaderToolRenderThread
 typedef struct paint_thread paint_thread;
 struct paint_thread
 {
@@ -806,7 +806,7 @@ struct app
   shader_constants Constants;
   timer Timer;
   fullscreen FullScreen;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   paint_thread* Thread;
 #endif
   int Width, Height;
@@ -824,7 +824,7 @@ AppMake(HWND Hwnd)
     App->Hwnd = Hwnd;
     App->Paint = PaintMake(Hwnd, Arena);
     TimerInit(&App->Timer);
-#if ShaderToolThread
+#if ShaderToolRenderThread
     App->Thread = PaintThreadOpen(App->Paint, Arena);
 #endif
   };
@@ -835,7 +835,7 @@ void
 AppTake(app* App)
 {
   if (!App) return;
-#if ShaderToolThread
+#if ShaderToolRenderThread
     PaintThreadClose(App->Thread);
 #endif
   PaintTake(App->Paint);
@@ -846,7 +846,7 @@ void
 AppResize(app* App, int Width, int Height)
 {
   if (!App) return;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   PaintThreadResize(App->Thread, Width, Height);
 #else
   App->Constants.iResolution.x = (float)Width;
@@ -864,7 +864,7 @@ AppMouseMove(app* App, float x, float y)
   
   App->Constants.iMouse.x = x;
   App->Constants.iMouse.y = y;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   PaintThreadUpdateConstants(App->Thread, &App->Constants);
 #endif
 };
@@ -875,7 +875,7 @@ AppMouseDown(app* App, float x, float y)
   if (!App) return;
   App->Constants.iMouse.z = x;
   App->Constants.iMouse.w = App->Height -y;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   PaintThreadUpdateConstants(App->Thread, &App->Constants);
 #endif
 };
@@ -886,7 +886,7 @@ AppMouseUp(app* App, float x, float y)
   if (!App) return;
   App->Constants.iMouse.z = x;
   App->Constants.iMouse.w = App->Height - y;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   PaintThreadUpdateConstants(App->Thread, &App->Constants);
 #endif
 };
@@ -897,7 +897,7 @@ AppMouseWheel(app* App, float dx, float dy)
   if (!App) return;
   App->Constants.iWheel.x += dx;
   App->Constants.iWheel.y -= dy;
-#if ShaderToolThread
+#if ShaderToolRenderThread
   PaintThreadUpdateConstants(App->Thread, &App->Constants);
 #endif
 };
@@ -935,7 +935,7 @@ void
 AppPaint(app* App)
 {
   if (!App) return;
-#if !(ShaderToolThread)  
+#if !(ShaderToolRenderThread)  
   double dt = TimerUpdate(&App->Timer);
   App->Constants.iTime.x += dt;
   App->Constants.iTime.y = dt;
@@ -1113,7 +1113,7 @@ int wWinMain(HINSTANCE a, HINSTANCE b, LPWSTR c, int d)
 
   ShowWindow(App->Hwnd, SW_SHOWDEFAULT);
 
-#if ShaderToolThread
+#if ShaderToolRenderThread
   MSG Msg ;
   while (GetMessageW(&Msg, 0, 0, 0))
   {
