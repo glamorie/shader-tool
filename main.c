@@ -1119,3 +1119,10 @@ int wWinMain(HINSTANCE a, HINSTANCE b, LPWSTR c, int d)
 };
 
 #include "builtin/builtin.c"
+
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxguid.lib")
