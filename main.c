@@ -581,5 +581,36 @@ PaintLeaveFullScreen(paint* Paint)
   if (!Paint) return;
 };
 
+typedef struct timer timer;
+struct timer
+{
+  LARGE_INTEGER Frequency;
+  LARGE_INTEGER Counter;
+};
+
+void
+TimerInit(timer* Timer)
+{
+  QueryPerformanceFrequency(&Timer->Frequency);
+  QueryPerformanceCounter(&Timer->Counter);
+};
+
+double
+TimerGet(timer* Timer)
+{
+  LARGE_INTEGER Counter;
+  QueryPerformanceCounter(&Counter);
+  return (double)(Counter.QuadPart) / (double)Timer->Frequency.QuadPart;
+};
+
+double
+TimerUpdate(timer* Timer)
+{
+  LARGE_INTEGER Counter;
+  QueryPerformanceCounter(&Counter);
+  double dt = (double)(Counter.QuadPart - Timer->Counter.QuadPart) / (double)Timer->Frequency.QuadPart;
+  Timer->Counter = Counter;
+  return dt;
+};
 
 #include "builtin/builtin.c"
