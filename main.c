@@ -796,4 +796,326 @@ PaintThreadUpdateConstants(paint_thread* Thread, shader_constants* Constants)
 
 #endif // FeatureRenderThread
 
+typedef struct app app;
+struct app
+{
+  arena* Arena;
+  HWND Hwnd;
+  paint* Paint;
+  shader_constants Constants;
+  timer Timer;
+  fullscreen FullScreen;
+#if ShaderToolThread
+  paint_thread* Thread;
+#endif
+  int Width, Height;
+};
+
+app*
+AppMake(HWND Hwnd)
+{
+  arena* Arena= ArenaMake(1<<20, 10<<10, 0);
+  app* App = ArenaZPush(Arena, sizeof(*App), alignof(app));
+  
+  if (App)
+  {
+    App->Arena = Arena;
+    App->Hwnd = Hwnd;
+    App->Paint = PaintMake(Hwnd, Arena);
+    TimerInit(&App->Timer);
+#if ShaderToolThread
+    App->Thread = PaintThreadOpen(App->Paint, Arena);
+#endif
+  };
+  return App;
+};
+
+void
+AppTake(app* App)
+{
+  if (!App) return;
+#if ShaderToolThread
+    PaintThreadClose(App->Thread);
+#endif
+  PaintTake(App->Paint);
+  ArenaTake(App->Arena);
+};
+
+void
+AppResize(app* App, int Width, int Height)
+{
+  if (!App) return;
+#if ShaderToolThread
+  PaintThreadResize(App->Thread, Width, Height);
+#else
+  App->Constants.iResolution.x = (float)Width;
+  App->Constants.iResolution.y = (float)Height;
+  PaintResize(App->Paint, Width, Height);
+  App->Width = Width;
+  App->Height = Height;
+#endif
+};
+
+void
+AppMouseMove(app* App, float x, float y)
+{
+  if (!App) return;
+  
+  App->Constants.iMouse.x = x;
+  App->Constants.iMouse.y = y;
+#if ShaderToolThread
+  PaintThreadUpdateConstants(App->Thread, &App->Constants);
+#endif
+};
+
+void
+AppMouseDown(app* App, float x, float y)
+{
+  if (!App) return;
+  App->Constants.iMouse.z = x;
+  App->Constants.iMouse.w = App->Height -y;
+#if ShaderToolThread
+  PaintThreadUpdateConstants(App->Thread, &App->Constants);
+#endif
+};
+
+void
+AppMouseUp(app* App, float x, float y)
+{
+  if (!App) return;
+  App->Constants.iMouse.z = x;
+  App->Constants.iMouse.w = App->Height - y;
+#if ShaderToolThread
+  PaintThreadUpdateConstants(App->Thread, &App->Constants);
+#endif
+};
+
+void
+AppMouseWheel(app* App, float dx, float dy)
+{
+  if (!App) return;
+  App->Constants.iWheel.x += dx;
+  App->Constants.iWheel.y -= dy;
+#if ShaderToolThread
+  PaintThreadUpdateConstants(App->Thread, &App->Constants);
+#endif
+};
+
+void
+AppKeyUp(app* App, u32 Key)
+{
+  if (!App) return;
+  
+  switch (Key)
+  {
+    case VK_ESCAPE:
+    {
+      if (App->FullScreen.On)
+      {
+        PaintLeaveFullScreen(App->Paint);
+      };
+      FullScreenLeave(&App->FullScreen, App->Hwnd);
+    } break;
+    case 'F':
+    {
+      if (App->FullScreen.On)
+      {
+        PaintLeaveFullScreen(App->Paint);
+      } else
+      {
+        PaintEnterFullScreen(App->Paint);
+      };
+      FullScreenToggle(&App->FullScreen, App->Hwnd);
+    } break;
+  };
+};
+
+void
+AppPaint(app* App)
+{
+  if (!App) return;
+#if !(ShaderToolThread)  
+  double dt = TimerUpdate(&App->Timer);
+  App->Constants.iTime.x += dt;
+  App->Constants.iTime.y = dt;
+  PaintRender(App->Paint, F4(0.2, 0.2, 0.2, 1.0), &App->Constants);
+#endif
+};
+
+LRESULT CALLBACK
+AppWindowProc(HWND Hwnd, UINT Msg, WPARAM Wparam, LPARAM Lparam)
+{
+  app* App = (app*)GetWindowLongPtrW(Hwnd, GWLP_USERDATA);
+  
+  switch (Msg)
+  {
+    case WM_CREATE:
+    {
+      App = AppMake(Hwnd);
+      SetWindowLongPtrW(Hwnd, GWLP_USERDATA, (LONG_PTR)App);
+      BOOL Dark = 1;
+      DwmSetWindowAttribute(Hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &Dark, sizeof(Dark));
+      
+    } return 0;
+    case WM_DESTROY:
+    {
+      AppTake(App);
+      PostQuitMessage(0);
+    } return 0;
+    case WM_PAINT:
+    {
+      PAINTSTRUCT Ps;
+      BeginPaint(Hwnd, &Ps);
+      AppPaint(App);
+      EndPaint(Hwnd, &Ps);
+    } return 0;
+    case WM_KEYUP:
+    {
+      AppKeyUp(App, (u32)Wparam);
+    } return 0;
+    case WM_SIZE:
+    {
+      AppResize(App, LOWORD(Lparam), HIWORD(Lparam));
+    } return 0;
+    case WM_MOUSEMOVE:
+    {
+      AppMouseMove(App, GET_X_LPARAM(Lparam), GET_Y_LPARAM(Lparam));
+    } return 0;
+    case WM_LBUTTONDOWN:
+    {
+      AppMouseDown(App, GET_X_LPARAM(Lparam), GET_Y_LPARAM(Lparam));
+    } return 0;
+    case WM_LBUTTONUP:
+    {
+      AppMouseUp(App, GET_X_LPARAM(Lparam), GET_Y_LPARAM(Lparam));
+    } return 0;
+    case WM_MOUSEWHEEL:
+    {
+      AppMouseWheel(App, 0, GET_WHEEL_DELTA_WPARAM(Lparam));
+    } return 0;
+    case WM_MOUSEHWHEEL:
+    {
+      AppMouseWheel(App, GET_WHEEL_DELTA_WPARAM(Lparam), 0);
+    } return 0;
+  };
+  return DefWindowProcW(Hwnd, Msg, Wparam, Lparam);
+};
+
+app*
+AppWindowMake(const char* Name, int Width, int Height)
+{
+  temp Temp = TempBegin(ArenaGetScratch(0, 0));
+
+  stringw Namew = StringToW(StringCAs(Name), Temp.Arena);
+  
+  wchar_t* ClassName = L"ShaderTool.Window";
+  HINSTANCE ModuleHandle = GetModuleHandleA(0);
+  
+  WNDCLASSEXW Wc = {0};
+  Wc.cbSize = sizeof(Wc);
+  Wc.hInstance = ModuleHandle;
+  Wc.lpfnWndProc = AppWindowProc;
+  Wc.lpszClassName = ClassName;
+  Wc.hCursor = LoadCursorA(0, IDC_ARROW);
+  
+  RegisterClassExW(&Wc);
+  
+  HWND Hwnd = CreateWindowExW(
+    WS_EX_NOREDIRECTIONBITMAP, ClassName, Namew.Value, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    Width, Height, 0, 0, ModuleHandle, 
+    0
+  );
+
+  TempEnd(Temp);
+  return (app*) GetWindowLongPtrW(Hwnd, GWLP_USERDATA);
+};
+
+void
+AppEnableDpiAwareness(void)
+{
+  typedef BOOL WINAPI set_process_dpi_aware(VOID);
+  typedef BOOL set_dpi_awareness_context(DPI_AWARENESS_CONTEXT Value);
+
+  HANDLE User32 = LoadLibraryA("User32.dll");
+
+  set_dpi_awareness_context* SetDpiAwarenessContext = (set_dpi_awareness_context*)GetProcAddress(User32, "SetDpiAwarenessContext");
+  set_process_dpi_aware* SetProcessDpiAware = (set_process_dpi_aware*)GetProcAddress(User32, "SetProcessDpiAware");
+
+  if (!SetDpiAwarenessContext || !SetDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+  {
+    if (SetProcessDpiAware)
+    {
+      SetProcessDpiAware();
+    };
+  };
+};
+
+int wWinMain(HINSTANCE a, HINSTANCE b, LPWSTR c, int d)
+{
+  AppEnableDpiAwareness();
+
+  app* App = AppWindowMake("Shader Tool", 1200, 600);
+
+  TempScope(App->Arena)
+  {
+    string Shader = PathReadAll(S("Shader.hlsl"), NULL, App->Arena);
+
+    string Error = {0};
+    App->Paint->PsUser = PaintCompileUserShader(
+      App->Paint, S("Shader.hlsl"), Shader, &Error,
+      App->Arena
+    );    
+    if (Error.Length)
+    {
+      FatalF("Error: \n%s\n", Error.Value);
+    };
+  };
+
+  ShowWindow(App->Hwnd, SW_SHOWDEFAULT);
+
+#if ShaderToolThread
+  MSG Msg ;
+  while (GetMessageW(&Msg, 0, 0, 0))
+  {
+    TranslateMessage(&Msg);
+    DispatchMessageW(&Msg);
+  }
+#else
+  const double FPS = 60.0f;
+  u32 Running = 2;
+  
+  timer Frames = {0};
+  
+  TimerInit(&Frames);
+  
+  while (Running)
+  {
+    MSG Msg = {0};
+    
+    while (PeekMessageW(&Msg, 0, 0, 0, PM_REMOVE))
+    {
+      if (Msg.message == WM_QUIT)
+      {
+        Running = 0;
+        break;
+      };
+      TranslateMessage(&Msg);
+      DispatchMessageW(&Msg);
+    };
+    
+    if (!Running) break;
+    
+    float dt = TimerUpdate(&Frames);
+    
+    AppPaint(App);
+    
+    if (dt < 1.0 / FPS)
+    {
+      Sleep((DWORD)(1000.0 * (1.0 /FPS - dt)));
+    };
+  };
+#endif
+  return 0;
+};
+
 #include "builtin/builtin.c"
